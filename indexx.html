@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EL ESCÁNER DEL CONTINUO — Protocolo de Acceso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+
+/* ═══════════════════════════════════════
+   TOKENS — Palette & Design System
+═══════════════════════════════════════ */
+:root {
+  --void:          #020205;
+  --void-2:        #05050C;
+  --panel:         #080816;
+  --panel-2:       #0A0A1C;
+  --supernova:     #4A1280;
+  --supernova-mid: #6C22B4;
+  --supernova-soft:rgba(74,18,128,0.15);
+  --quantum:       #0044EE;
+  --quantum-mid:   #2563EB;
+  --quantum-soft:  rgba(0,68,238,0.12);
+  --gold:          #B89543;
+  --gold-soft:     rgba(184,149,67,0.25);
+  --white:         #FFFFFF;
+  --grey-1:        #D1D1D6;
+  --grey-2:        #8E8E93;
+  --grey-3:        #3A3A4C;
+  --grey-4:        #12121F;
+  --border:        rgba(0,68,238,0.12);
+  --border-hi:     rgba(0,68,238,0.30);
+  --border-purple: rgba(74,18,128,0.25);
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+  width:100%; height:100%;
+  background:var(--void);
+  font-family:'Manrope', sans-serif;
+  color:var(--white);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+button { font-family:inherit; cursor:pointer; outline:none; }
+
+/* ═══════════════════════════════════════
+   ATMOSPHERE & BACKGROUND
+═══════════════════════════════════════ */
+.bg-grid {
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,68,238,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,68,238,0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+  mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+}
+.neb {
+  position:fixed; border-radius:50%;
+  pointer-events:none; z-index:1; filter:blur(120px);
+}
+.neb-1 { width:600px; height:600px; top:-250px; left:-200px; background:rgba(74,18,128,0.14); animation:nb1 25s ease-in-out infinite; }
+.neb-2 { width:500px; height:500px; top:25%; right:-200px; background:rgba(0,68,238,0.08); animation:nb2 30s ease-in-out infinite; }
+@keyframes nb1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(40px,25px)} }
+@keyframes nb2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,20px)} }
+
+/* ═══════════════════════════════════════
+   SCREEN SYSTEM CONTAINER
+═══════════════════════════════════════ */
+.screen {
+  position:fixed; inset:0; z-index:10;
+  display:flex; opacity:0; pointer-events:none;
+  transition: opacity .5s cubic-bezier(.4,0,.2,1);
+}
+.screen.active { opacity:1; pointer-events:all; }
+.screen.out { animation: scrOut .4s ease forwards; }
+@keyframes scrOut {
+  0% { opacity:1; }
+  100% { opacity:0; transform:scale(1.005); }
+}
+
+/* UI ELEMENTS */
+.btn-primary {
+  padding:16px 40px;
+  background:linear-gradient(135deg, var(--supernova) 0%, var(--quantum) 100%);
+  border:none; border-radius:3px;
+  color:var(--white); font-size:11px; font-weight:600; letter-spacing:.2em;
+  text-transform:uppercase;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.02), 0 8px 24px rgba(74,18,128,0.25);
+  transition:all .3s cubic-bezier(.4,0,.2,1);
+  position:relative; overflow:hidden;
+}
+.btn-primary::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg, var(--supernova-mid) 0%, var(--quantum-mid) 100%);
+  opacity:0; transition:opacity .3s ease;
+}
+.btn-primary > * { position:relative; z-index:1; }
+.btn-primary:hover { transform:translateY(-1px); box-shadow:0 0 0 1px rgba(147,51,234,0.2), 0 12px 36px rgba(74,18,128,0.35); }
+.btn-primary:hover::before { opacity:1; }
+
+.btn-ghost {
+  background:transparent; border:none;
+  color:var(--grey-2); font-size:11px; font-weight:400; letter-spacing:.08em;
+  transition:color .3s; text-decoration:underline; text-underline-offset:5px;
+  text-transform:uppercase;
+}
+.btn-ghost:hover { color:var(--white); }
+
+/* ═══════════════════════════════════════
+   S1 — LANDING VIEWPORT OPTIMIZATION
+═══════════════════════════════════════ */
+#s-warn {
+  align-items:center; justify-content:center;
+  padding:20px;
+  overflow-y:auto;
+}
+
+.warn-wrap {
+  width:100%; max-width:620px;
+  display:flex; flex-direction:column;
+  justify-content:center;
+}
+
+.warn-sys-line {
+  display:flex; align-items:center; gap:12px;
+  margin-bottom:1.5vh;
+  font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.15em;
+  color:var(--quantum-mid); text-transform:uppercase;
+}
+.warn-sys-line::before {
+  content:''; width:6px; height:6px; border-radius:50%; background:var(--quantum);
+  box-shadow:0 0 8px var(--quantum); animation:pBlue 2s ease-in-out infinite;
+}
+.warn-sys-line::after { content:''; flex:1; height:1px; background:var(--border); }
+@keyframes pBlue { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.warn-title {
+  font-family:'Cinzel', serif; font-size:clamp(28px, 4.5vw, 46px);
+  font-weight:700; line-height:1.1; color:var(--white);
+  margin-bottom:1vh; letter-spacing:.01em; text-transform:uppercase;
+}
+.warn-title .accent { color:var(--supernova-mid); text-shadow:0 0 24px rgba(108,34,180,0.3); }
+
+.warn-subtitle {
+  font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.25em;
+  color:var(--grey-2); text-transform:uppercase; margin-bottom:2.5vh;
+}
+
+.time-exchange {
+  display:flex; align-items:center; justify-content:center; gap:20px;
+  padding:16px 24px; background:var(--panel); border:1px solid var(--border);
+  margin-bottom:2.5vh; position:relative;
+}
+.time-exchange::before, .time-exchange::after { content:''; position:absolute; width:8px; height:8px; }
+.time-exchange::before { top:-1px; left:-1px; border-top:1px solid var(--gold); border-left:1px solid var(--gold); }
+.time-exchange::after { bottom:-1px; right:-1px; border-bottom:1px solid var(--gold); border-right:1px solid var(--gold); }
+.te-item { text-align:center; flex:1; }
+.te-num { font-family:'Cinzel', serif; font-size:26px; font-weight:700; color:var(--white); margin-bottom:4px; }
+.te-item.gold .te-num { color:var(--gold); text-shadow:0 0 15px rgba(184,149,67,0.35); }
+.te-label { font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--grey-2); line-height:1.4; }
+.te-arrow { color:var(--quantum); font-size:20px; }
+
+.warn-body {
+  font-size:13.5px; font-weight:300; line-height:1.75; color:var(--grey-1); margin-bottom:2.5vh;
+}
+.warn-body strong { color:var(--white); font-weight:500; }
+.warn-body em { color:var(--quantum-mid); font-style:normal; font-weight:500; }
+
+.warn-question {
+  font-family:'Cinzel', serif; font-size:clamp(15px, 2vw, 19px);
+  font-weight:400; line-height:1.4; color:var(--white);
+  margin-bottom:2.5vh; font-style:italic;
+}
+
+.warn-divider { width:100%; height:1px; background:var(--border); margin-bottom:2.5vh; }
+.warn-btns { display:flex; flex-direction:column; align-items:center; gap:14px; }
+.btn-warn-yes { width:100%; max-width:380px; }
+
+/* ═══════════════════════════════════════
+   S2 — GAME PANEL LAYOUT (TEXT-RPG)
+═══════════════════════════════════════ */
+#s-quiz { flex-direction:column; justify-content:space-between; }
+
+.q-header {
+  flex-shrink:0; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--void-2);
+  display:flex; flex-direction:column; gap:8px; z-index:5;
+}
+.q-h-row { display:flex; justify-content:space-between; align-items:center; }
+.q-brand { font-family:'Cinzel', serif; font-size:12px; font-weight:700; letter-spacing:.2em; }
+.q-step-counter { font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.15em; color:var(--quantum-mid); }
+.q-step-counter .num { color:var(--white); font-weight:500; text-shadow:0 0 10px rgba(0,68,238,0.4); }
+.q-ego-row { display:flex; align-items:center; gap:12px; }
+.q-ego-label { font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--grey-2); }
+.q-ego-bar { flex:1; height:3px; background:rgba(0,68,238,0.06); overflow:hidden; position:relative; }
+.q-ego-fill { height:100%; width:0; background:linear-gradient(to right, var(--supernova), var(--quantum)); box-shadow:0 0 10px rgba(74,18,128,0.4); transition:width .6s cubic-bezier(.4,0,.2,1); }
+.q-ego-status { font-family:'JetBrains Mono', monospace; font-size:9px; color:var(--supernova-mid); min-width:70px; text-align:right; }
+
+/* MAIN RPG VIEWPORT */
+.q-stage {
+  flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between;
+  padding:15px 24px; gap:12px; position:relative; z-index:5;
+}
+.q-stage.fading { opacity:0; transform:translateY(4px); transition: opacity .2s ease, transform .2s ease; }
+
+/* PANEL SUPERIOR: VISUAL + ESCENARIO */
+.q-panel-upper { display:flex; flex-direction:column; gap:8px; }
+.q-illustration {
+  width:100%; background:linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  border:1px solid var(--border-hi); position:relative; overflow:hidden;
+  aspect-ratio: 21 / 7; max-height:22vh; display:flex; align-items:center; justify-content:center;
+}
+.q-illustration::before, .q-illustration::after { content:''; position:absolute; width:12px; height:12px; pointer-events:none; }
+.q-illustration::before { top:-1px; left:-1px; border-top:1px solid var(--quantum); border-left:1px solid var(--quantum); }
+.q-illustration::after { bottom:-1px; right:-1px; border-bottom:1px solid var(--quantum); border-right:1px solid var(--quantum); }
+.q-illustration svg { width:100%; height:100%; max-height:100%; }
+
+.q-scenario-text { background:var(--panel); border-left:2px solid var(--quantum); padding:10px 14px; font-size:12.5px; font-weight:300; line-height:1.5; color:var(--grey-1); }
+.q-scenario-text .label { display:block; font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--quantum-mid); margin-bottom:3px; font-weight:500; }
+
+/* PANEL CENTRAL: ACCIÓN + SLIDER */
+.q-panel-central { display:flex; flex-direction:column; gap:10px; justify-content:center; flex:1; }
+.q-question-text { background:rgba(74,18,128,0.04); border-left:2px solid var(--supernova-mid); padding:12px 14px; }
+.q-question-text .label { display:block; font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--supernova-mid); margin-bottom:4px; font-weight:500; }
+.q-question-text .stmt { font-family:'Cinzel', serif; font-size:clamp(13.5px, 1.8vw, 16px); font-weight:400; line-height:1.45; color:var(--white); }
+
+.q-slider-zone { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+.q-slider-val-row { display:flex; justify-content:center; align-items:baseline; }
+.q-slider-num { font-family:'Cinzel', serif; font-size:32px; font-weight:700; line-height:1; color:var(--supernova-mid); text-shadow:0 0 15px rgba(108,34,180,0.4); transition:color .2s; }
+
+input[type=range] { -webkit-appearance:none; width:100%; height:2px; background:rgba(74,18,128,0.15); outline:none; cursor:pointer; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--white); box-shadow:0 0 0 3px rgba(74,18,128,0.25), 0 0 12px rgba(0,68,238,0.4); transition:box-shadow .2s; }
+input[type=range]::-moz-range-thumb { width:16px; height:16px; border-radius:50%; background:var(--white); border:none; box-shadow:0 0 0 3px rgba(74,18,128,0.25), 0 0 12px rgba(0,68,238,0.4); }
+
+.q-slider-poles { display:flex; justify-content:space-between; font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.1em; color:var(--grey-3); text-transform:lowercase; }
+
+/* ACTION NAV BUTTONS */
+.q-nav-buttons { display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
+.btn-nav-back { background:transparent; border:none; color:var(--grey-3); font-size:10px; letter-spacing:.1em; text-transform:uppercase; transition:color .3s; }
+.btn-nav-back:hover { color:var(--grey-1); }
+
+/* PANEL INFERIOR: INDICADOR DEL CONTINUO */
+.q-panel-lower {
+  flex-shrink:0; padding:10px 24px; background:var(--void-2); border-top:1px solid var(--border);
+  display:flex; align-items:center; gap:16px; z-index:5;
+}
+.cont-icon { width:32px; height:32px; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all .35s ease; }
+.cont-icon svg { width:100%; height:100%; }
+.cont-icon.abyss { color:var(--supernova); }
+.cont-icon.faro { color:var(--quantum-mid); }
+.cont-icon.pulse-abyss { animation: pAbyss .8s ease; }
+.cont-icon.pulse-faro { animation: pFaro .8s ease; }
+@keyframes pAbyss { 0%,100%{transform:scale(1);filter:none} 50%{transform:scale(1.15);filter:drop-shadow(0 0 12px var(--supernova))} }
+@keyframes pFaro { 0%,100%{transform:scale(1);filter:none} 50%{transform:scale(1.15);filter:drop-shadow(0 0 12px var(--quantum))} }
+
+.cont-line-wrap { flex:1; position:relative; }
+.cont-line { height:2px; position:relative; background:linear-gradient(90deg, rgba(0,68,238,0.4) 0%, rgba(0,68,238,0.05) 35%, rgba(74,18,128,0.05) 65%, rgba(74,18,128,0.4) 100%); }
+.cont-labels { position:absolute; top:100%; left:0; right:0; display:flex; justify-content:space-between; margin-top:5px; font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:.15em; text-transform:uppercase; }
+.cont-labels .left { color:var(--quantum-mid); }
+.cont-labels .right { color:var(--supernova-mid); }
+
+/* ═══════════════════════════════════════
+   S3 — LOADING (CYBERPUNK CODE RAIN)
+═══════════════════════════════════════ */
+#s-loading { align-items:center; justify-content:center; background:#010104; z-index:40; }
+.code-rain { position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:.25; }
+.rain-col { position:absolute; top:-105%; font-family:'JetBrains Mono', monospace; font-size:10px; line-height:1.6; color:var(--quantum); white-space:pre; text-shadow:0 0 6px var(--quantum); animation: rain linear infinite; }
+@keyframes rain { 0%{transform:translateY(0);opacity:0} 10%,90%{opacity:.4} 100%{transform:translateY(210vh);opacity:0} }
+
+.loading-inner { position:relative; z-index:5; text-align:center; Jack-width:500px; padding:0 24px; }
+.quantum-orb { width:110px; height:110px; margin:0 auto 32px; position:relative; perspective:600px; }
+.orb-core { position:absolute; inset:35%; border-radius:50%; background:radial-gradient(circle at 30% 30%, #fff 0%, var(--quantum-mid) 40%, var(--supernova) 100%); box-shadow:0 0 24px var(--quantum), 0 0 48px var(--supernova); animation:oPulse 2s ease-in-out infinite; }
+@keyframes oPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+.orb-ring { position:absolute; inset:0; border-radius:50%; border:1px solid; transform-style:preserve-3d; }
+.orb-ring.r1 { border-color:rgba(0,68,238,0.4); animation: spX 3.5s linear infinite; }
+.orb-ring.r2 { border-color:rgba(74,18,128,0.4); animation: spY 4.5s linear infinite reverse; inset:8%; }
+@keyframes spX { from{transform:rotateX(75deg) rotateZ(0)} to{transform:rotateX(75deg) rotateZ(360deg)} }
+@keyframes spY { from{transform:rotateY(75deg) rotateZ(0)} to{transform:rotateY(75deg) rotateZ(360deg)} }
+
+.loading-title { font-family:'Cinzel', serif; font-size:24px; font-weight:700; color:var(--white); margin-bottom:14px; letter-spacing:.05em; text-transform:uppercase; }
+.loading-subtitle { font-size:12.5px; font-weight:300; line-height:1.75; color:var(--grey-1); }
+.loading-subtitle .em { color:var(--supernova-mid); font-weight:500; }
+.loading-bar { width:200px; height:1px; margin:24px auto 0; background:rgba(0,68,238,0.12); overflow:hidden; }
+.loading-bar-fill { height:100%; width:0; background:linear-gradient(to right, var(--supernova), var(--quantum)); }
+.loading-bar-fill.active { animation: lFill 3.2s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes lFill { to{width:100%} }
+
+/* ═══════════════════════════════════════
+   S4 — REPORT RESULTS VIEW
+═══════════════════════════════════════ */
+#s-result { flex-direction:column; overflow:hidden; background:var(--void); }
+.r-header { flex-shrink:0; padding:14px 24px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:var(--void-2); z-index:5; }
+.r-scroll { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; z-index:5; }
+.r-wrap { max-width:700px; width:100%; padding:44px 24px 64px; margin:0 auto; }
+.r-eyebrow { font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:0.25em; color:var(--quantum-mid); margin-bottom:16px; display:flex; align-items:center; gap:8px; opacity:0; }
+.r-eyebrow::before { content:''; width:16px; height:1px; background:var(--quantum); }
+
+.r-hero { display:flex; gap:28px; align-items:flex-start; margin-bottom:40px; opacity:0; }
+.r-title-block { flex:1; min-width:0; }
+.r-archetype-num { font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:.2em; color:var(--gold); margin-bottom:6px; }
+.r-archetype-name { font-family:'Cinzel', serif; font-size:clamp(26px, 4.5vw, 48px); font-weight:900; line-height:1.1; color:var(--white); margin-bottom:8px; }
+.r-archetype-name em { font-style:italic; color:var(--supernova-mid); text-shadow:0 0 24px rgba(108,34,180,0.3); font-weight:700; }
+.r-archetype-tag { font-size:13px; color:var(--grey-1); font-style:italic; }
+
+.naipe-card { flex-shrink:0; width:114px; height:160px; background:linear-gradient(135deg, #06060F 0%, #020206 100%); border:1px solid var(--gold-soft); border-radius:5px; position:relative; box-shadow:0 10px 24px rgba(0,0,0,0.5); overflow:hidden; }
+.naipe-card::before { content:''; position:absolute; inset:4px; border:1px solid rgba(184,149,67,0.12); border-radius:2px; }
+.naipe-diag { position:absolute; top:0; left:0; width:200%; height:1px; background:linear-gradient(to right, transparent 15%, var(--gold) 50%, transparent 85%); opacity:.45; transform:rotate(54.5deg); transform-origin:0 0; }
+.naipe-half { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.naipe-half.dark { clip-path:polygon(0 0, 100% 0, 0 100%); padding:14px 0 0 10px; align-items:flex-start; justify-content:flex-start; }
+.naipe-half.dark svg { width:34px; height:34px; color:var(--supernova-mid); filter:drop-shadow(0 0 6px rgba(108,34,180,0.4)); }
+.naipe-half.light { clip-path:polygon(100% 0, 100% 100%, 0 100%); padding:0 10px 14px 0; align-items:flex-end; justify-content:flex-end; }
+.naipe-half.light svg { width:34px; height:34px; color:var(--gold); filter:drop-shadow(0 0 8px rgba(184,149,67,0.4)); }
+.naipe-corner-tl, .naipe-corner-br { position:absolute; font-family:'JetBrains Mono', monospace; font-size:8px; color:rgba(184,149,67,0.3); }
+.naipe-corner-tl { top:6px; left:6px; }
+.naipe-corner-br { bottom:6px; right:6px; transform:rotate(180deg); }
+
+.r-scene-wrap { width:100%; margin-bottom:36px; border:1px solid var(--border); position:relative; opacity:0; }
+.r-scene-wrap svg { display:block; width:100%; height:auto; }
+.r-scene-caption { position:absolute; bottom:8px; right:12px; font-family:'JetBrains Mono', monospace; font-size:8px; letter-spacing:.15em; text-transform:uppercase; color:rgba(184,149,67,0.15); }
+.r-scene-corner { position:absolute; width:12px; height:12px; }
+.r-scene-corner.tl { top:-1px; left:-1px; border-top:1px solid var(--gold); border-left:1px solid var(--gold); }
+.r-scene-corner.br { bottom:-1px; right:-1px; border-bottom:1px solid var(--gold); border-right:1px solid var(--gold); }
+
+.r-divider { width:100%; height:1px; background:var(--border); margin:32px 0; }
+.r-sections { display:flex; flex-direction:column; gap:36px; margin-bottom:44px; opacity:0; }
+.r-section { padding-left:18px; border-left:2px solid var(--border-purple); }
+.r-section.gold { border-left-color:var(--gold-soft); }
+.r-section.blue { border-left-color:var(--border-hi); }
+.r-sec-label { display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--supernova-mid); margin-bottom:10px; font-weight:500; }
+.r-section.gold .r-sec-label { color:var(--gold); }
+.r-section.blue .r-sec-label { color:var(--quantum-mid); }
+.r-sec-label::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentcolor; }
+.r-sec-title { font-family:'Cinzel', serif; font-size:clamp(18px,2.4vw,23px); font-weight:700; line-height:1.2; color:var(--white); margin-bottom:10px; }
+.r-sec-body { font-size:13.5px; font-weight:300; line-height:1.8; color:var(--grey-1); }
+.r-sec-body strong { color:var(--white); font-weight:500; }
+.r-sec-body em { font-style:italic; color:var(--supernova-mid); }
+
+.r-vid-wrap { margin-bottom:44px; opacity:0; }
+.r-vid-label { font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--quantum-mid); margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.r-vid-label::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--quantum); box-shadow:0 0 6px var(--quantum); }
+.r-vid-box { position:relative; width:100%; padding-top:56.25%; background:var(--panel); border:1px solid var(--border); }
+.r-vid-box iframe { position:absolute; inset:0; width:100%; height:100%; border:none; }
+.r-vid-ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+.r-vid-play { width:54px; height:54px; border-radius:50%; background:rgba(74,18,128,0.1); border:1px solid var(--supernova-mid); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 20px rgba(74,18,128,0.25); transition:all .3s ease; }
+.r-vid-play:hover { background:rgba(74,18,128,0.2); box-shadow:0 0 30px rgba(74,18,128,0.4); transform:scale(1.04); }
+.r-vid-play::before { content:''; border-left:12px solid var(--white); border-top:8px solid transparent; border-bottom:8px solid transparent; margin-left:4px; }
+.r-vid-ph small { font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.15em; color:var(--grey-3); text-transform:uppercase; text-align:center; max-width:260px; line-height:1.6; }
+
+.r-cta-wrap { text-align:center; padding:44px 28px; background:linear-gradient(180deg, rgba(74,18,128,0.03) 0%, rgba(0,68,238,0.02) 100%); border:1px solid var(--border-purple); position:relative; opacity:0; }
+.r-cta-wrap::before, .r-cta-wrap::after { content:''; position:absolute; width:12px; height:12px; }
+.r-cta-wrap::before { top:-1px; left:-1px; border-top:1px solid var(--gold); border-left:1px solid var(--gold); }
+.r-cta-wrap::after { bottom:-1px; right:-1px; border-bottom:1px solid var(--gold); border-right:1px solid var(--gold); }
+.r-cta-eyebrow { font-family:'JetBrains Mono', monospace; font-size:9px; letter-spacing:.25em; color:var(--gold); margin-bottom:14px; }
+.r-cta-title { font-family:'Cinzel', serif; font-size:clamp(20px, 2.8vw, 28px); color:var(--white); margin-bottom:12px; line-height:1.25; }
+.r-cta-sub { font-size:13.5px; font-weight:300; line-height:1.75; color:var(--grey-1); margin-bottom:32px; max-width:440px; margin-left:auto; margin-right:auto; }
+.btn-cta-supernova { padding:18px 44px; font-size:11px; animation: sPulse 3s ease-in-out infinite; }
+@keyframes sPulse { 0%,100%{box-shadow:0 0 0 1px rgba(255,255,255,0.02), 0 0 0 0 rgba(74,18,128,0.6), 0 8px 24px rgba(74,18,128,0.25);} 50%{box-shadow:0 0 0 1px rgba(255,255,255,0.04), 0 0 0 12px rgba(74,18,128,0), 0 12px 36px rgba(74,18,128,0.45);} }
+
+.r-restart { text-align:center; margin-top:28px; opacity:0; }
+
+/* ═══════════════════════════════════════
+   RESPONSIVE OVERRIDES
+═══════════════════════════════════════ */
+@media (max-width:680px) {
+  #s-warn { padding:16px; }
+  .warn-title { font-size:26px; }
+  .time-exchange { padding:12px 16px; gap:12px; margin-bottom:2vh; }
+  .te-num { font-size:22px; }
+  .te-label { font-size:8px; }
+  .warn-body { font-size:13px; line-height:1.65; margin-bottom:2vh; }
+  .warn-question { font-size:14px; margin-bottom:2vh; }
+  .warn-btns { gap:12px; }
+
+  .q-header { padding:10px 16px; }
+  .q-brand { font-size:11px; }
+  .q-step-counter { font-size:9px; }
+  .q-ego-label { font-size:8px; }
+  .q-stage { padding:10px 16px; gap:8px; }
+  .q-illustration { max-height:16vh; aspect-ratio:21/8; }
+  .q-scenario-text { padding:8px 12px; font-size:11.5px; }
+  .q-question-text { padding:10px 12px; }
+  .q-question-text .stmt { font-size:13px; line-height:1.4; }
+  .q-slider-num { font-size:28px; }
+  .q-panel-lower { padding:8px 16px; gap:12px; }
+  .cont-icon { width:26px; height:26px; }
+
+  .r-wrap { padding:32px 16px 48px; }
+  .r-hero { flex-direction:column-reverse; gap:20px; }
+  .naipe-card { width:100px; height:140px; }
+  .r-archetype-name { font-size:28px; }
+  .r-section { padding-left:14px; }
+  .r-sec-title { font-size:17px; }
+  .r-sec-body { font-size:13px; line-height:1.7; }
+  .r-cta-wrap { padding:32px 16px; }
+  .btn-cta-supernova { padding:16px 32px; font-size:10px; }
+}
+@media (max-height:680px) {
+  .q-illustration { max-height:14vh; }
+  .warn-body { font-size:12.5px; line-height:1.55; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="neb neb-1"></div>
+<div class="neb neb-2"></div>
+
+<!-- ═══════════════════════════════════════
+     S1 — EL ACUERDO DE ENTRADA
+═══════════════════════════════════════ -->
+<div class="screen active" id="s-warn">
+  <div class="warn-wrap">
+    <div class="warn-sys-line">// Protocolo de acceso — Sesión segura</div>
+    <h1 class="warn-title">El Acuerdo<br><span class="accent">de Entrada</span></h1>
+    <div class="warn-subtitle">El Escáner del Continuo · v.2.4</div>
+
+    <div class="time-exchange">
+      <div class="te-item">
+        <span class="te-num">10–12</span>
+        <span class="te-label">minutos<br>de tu vida</span>
+      </div>
+      <div class="te-arrow">→</div>
+      <div class="te-item gold">
+        <span class="te-num">∞</span>
+        <span class="te-label">algo que<br>durará para siempre</span>
+      </div>
+    </div>
+
+    <div class="warn-body">
+      Este no es un test de internet para inflar tu ego.<br><br>
+      Este test toma aproximadamente <em>10–12 minutos de tu vida</em>, pero lo que te entregará durará para siempre. Para darte un diagnóstico real, vamos a entrar en el espacio más <strong>seguro</strong>, pero también más <strong>incómodo</strong> en el que has estado.<br><br>
+      Te prometemos respeto absoluto, pero necesitamos <strong>honestidad brutal.</strong>
+    </div>
+
+    <div class="warn-question">
+      ¿Estás listo para ver lo que has estado<br>ocultando de ti mismo?
+    </div>
+
+    <div class="warn-divider"></div>
+
+    <div class="warn-btns">
+      <button class="btn-primary btn-warn-yes" onclick="startQuiz()">
+        <span>Sí, estoy listo para la verdad</span>
+      </button>
+      <button class="btn-ghost" onclick="exitQuiz()">
+        no, prefiero seguir igual
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     S2 — GAME PANEL (RPG VIEWPORT)
+═══════════════════════════════════════ -->
+<div class="screen" id="s-quiz">
+  <div class="q-header">
+    <div class="q-h-row">
+      <span class="q-brand">EL ESCÁNER DEL CONTINUO</span>
+      <span class="q-step-counter">CONEXIÓN: PASO <span class="num" id="step-num">01</span> DE 12</span>
+    </div>
+    <div class="q-ego-row">
+      <span class="q-ego-label">Resistencia del Ego</span>
+      <div class="q-ego-bar"><div class="q-ego-fill" id="ego-fill"></div></div>
+      <span class="q-ego-status" id="ego-status">[Calculando...]</span>
+    </div>
+  </div>
+
+  <div class="q-stage" id="q-stage">
+    <!-- PANEL SUPERIOR -->
+    <div class="q-panel-upper">
+      <div class="q-illustration" id="q-illustration"></div>
+      <div class="q-scenario-text">
+        <span class="label">El Escenario</span>
+        <div id="q-scenario-body">—</div>
+      </div>
+    </div>
+
+    <!-- PANEL CENTRAL -->
+    <div class="q-panel-central">
+      <div class="q-question-text">
+        <span class="label">Tu Respuesta Inconsciente</span>
+        <div class="stmt" id="q-statement">—</div>
+      </div>
+      <div class="q-slider-zone">
+        <div class="q-slider-val-row">
+          <span class="q-slider-num" id="slider-num">5</span>
+        </div>
+        <input type="range" id="q-slider" min="1" max="10" value="5" step="1" oninput="onSlider(this.value)">
+        <div class="q-slider-poles">
+          <span>no me identifico</span>
+          <span>me describe por completo</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL INFERIOR -->
+  <div class="q-panel-lower">
+    <div class="cont-icon faro" id="cont-faro">
+      <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <path d="M14 36 L18 12 L22 12 L26 36 Z"/>
+        <rect x="16" y="9" width="8" height="4" rx="0.5"/>
+        <line x1="20" y1="5" x2="20" y2="9"/>
+        <circle cx="20" cy="3" r="1.5" fill="currentColor"/>
+        <line x1="14" y1="22" x2="6"  y2="20" opacity=".55"/>
+        <line x1="26" y1="22" x2="34" y2="20" opacity=".55"/>
+      </svg>
+    </div>
+    <div class="cont-line-wrap">
+      <div class="cont-line" id="cont-line"></div>
+      <div class="cont-labels">
+        <span class="left">◉ Faro</span>
+        <span class="right">Abismo ◉</span>
+      </div>
+    </div>
+    <div class="cont-icon abyss" id="cont-abyss">
+      <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="20" cy="20" r="14" opacity=".55"/>
+        <circle cx="20" cy="20" r="9"  opacity=".75"/>
+        <circle cx="20" cy="20" r="4.5" fill="currentColor"/>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     S3 — LOADING SCREEN (RPG TRANSITION)
+═══════════════════════════════════════ -->
+<div class="screen" id="s-loading">
+  <div class="code-rain" id="code-rain"></div>
+  <div class="loading-inner">
+    <div class="quantum-orb">
+      <div class="orb-ring r1"></div>
+      <div class="orb-ring r2"></div>
+      <div class="orb-core"></div>
+    </div>
+    <div class="loading-title" id="loader-title">Descifrando<br>Núcleo Psíquico</div>
+    <div class="loading-subtitle" id="loader-sub">
+      Tu mente va a intentar intelectualizar lo que vas a leer a continuación para protegerte del dolor de tu carencia. <span class="em">No se lo permitas.</span>
+    </div>
+    <div class="loading-bar"><div class="loading-bar-fill" id="l-bar"></div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     S4 — RESULT REPORT VIEW
+═══════════════════════════════════════ -->
+<div class="screen" id="s-result">
+  <div class="r-header">
+    <span class="q-brand">EL ESCÁNER DEL CONTINUO</span>
+    <span class="q-step-counter"><span class="num">DIAGNÓSTICO</span> COMPLETADO</span>
+  </div>
+
+  <div class="r-scroll">
+    <div class="r-wrap">
+      <div class="r-eyebrow" id="r-eyebrow">// Tesoro encontrado · Arquetipo dominante revelado</div>
+      <div class="r-hero" id="r-hero">
+        <div class="r-title-block">
+          <div class="r-archetype-num" id="r-arc-num"></div>
+          <h1 class="r-archetype-name" id="r-name"></h1>
+          <div class="r-archetype-tag" id="r-tag"></div>
+        </div>
+        <div class="naipe-card" id="r-naipe">
+          <div class="naipe-corner-tl">CC</div>
+          <div class="naipe-corner-br">SI</div>
+          <div class="naipe-half dark"  id="naipe-dark"></div>
+          <div class="naipe-half light" id="naipe-light"></div>
+          <div class="naipe-diag"></div>
+        </div>
+      </div>
+
+      <div class="r-scene-wrap" id="r-scene"></div>
+
+      <div class="r-divider"></div>
+
+      <div class="r-sections" id="r-sections">
+        <div class="r-section blue">
+          <div class="r-sec-label">El Foco · La Carencia Raíz</div>
+          <div class="r-sec-title" id="r-foco-title"></div>
+          <div class="r-sec-body" id="r-foco"></div>
+        </div>
+        <div class="r-section">
+          <div class="r-sec-label">La Conducta en la Oscuridad</div>
+          <div class="r-sec-title">El Mecanismo de Proyección</div>
+          <div class="r-sec-body" id="r-oscuridad"></div>
+        </div>
+        <div class="r-section gold">
+          <div class="r-sec-label">La Sombra Iluminada</div>
+          <div class="r-sec-title" id="r-sombra-title"></div>
+          <div class="r-sec-body" id="r-sombra"></div>
+        </div>
+        <div class="r-section">
+          <div class="r-sec-label">La Clave de Integración</div>
+          <div class="r-sec-title">El Quiebre Liberador</div>
+          <div class="r-sec-body" id="r-integracion"></div>
+        </div>
+      </div>
+
+      <div class="r-vid-wrap" id="r-vid-wrap">
+        <div class="r-vid-label">Mensaje de tu Mentora</div>
+        <div class="r-vid-box">
+          <iframe id="r-video" src="" allow="autoplay; fullscreen" allowfullscreen></iframe>
+          <div class="r-vid-ph" id="r-vid-ph">
+            <button class="r-vid-play" aria-label="Play"></button>
+            <small>Placeholder de video<br>Configura la URL de tu mentor en el objeto ARC</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="r-divider"></div>
+
+      <div class="r-cta-wrap" id="r-cta">
+        <div class="r-cta-eyebrow">// El siguiente paso en tu continuo</div>
+        <div class="r-cta-title">El trabajo de integración<br>comienza aquí.</div>
+        <p class="r-cta-sub">Has identificado tu patrón dominante. La Fase 1 — el Trabajo de Sombra Junguiana — es donde ese patrón deja de controlarte desde las sombras y comienza a integrarse.</p>
+        <button class="btn-primary btn-cta-supernova" onclick="window.open('#','_blank')">
+          <span>Agendar Llamada de Evaluación de Fase 1</span>
+        </button>
+      </div>
+
+      <div class="r-restart" id="r-restart">
+        <button class="btn-ghost" onclick="restart()">reiniciar evaluación</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+/* ── NAIPE ICONS SVG ── */
+const NAIPE = {
+  insuficiente: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11 5 L29 5 M11 35 L29 35 M11 5 L20 20 L11 35 M29 5 L20 20 L29 35"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="20" cy="20" r="14"/><circle cx="20" cy="20" r="8" stroke-dasharray="2 2"/></svg>`
+  },
+  inseguro: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M20 6 L30 11 L30 22 C30 28, 26 32, 20 35 C14 32, 10 28, 10 22 L10 11 Z"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="20" cy="20" r="6"/><line x1="20" y1="4" x2="20" y2="9"/><line x1="20" y1="31" x2="20" y2="36"/><line x1="4" y1="20" x2="9" y2="20"/><line x1="31" y1="20" x2="36" y2="20"/></svg>`
+  },
+  indigno: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M12 10 L28 10 L26 32 C26 34, 24 35, 20 35 C16 35, 14 34, 14 32 Z"/><path d="M16 18 L24 24"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 22 L13 14 L18 22 L22 12 L27 22 L32 14 L32 28 L8 28 Z"/></svg>`
+  },
+  invulnerable: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M12 12 C12 8, 16 6, 20 6 C24 6, 28 8, 28 12 L28 24 C28 30, 24 33, 20 33 C16 33, 12 30, 12 24 Z"/><line x1="12" y1="19" x2="28" y2="19"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 24 L14 18 L20 22 L26 18 L32 24 M14 18 L14 12 M26 18 L26 12"/></svg>`
+  },
+  complaciente: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="12" y="18" width="16" height="15" rx="1"/><path d="M15 18 L15 13 C15 11, 17 10, 20 10 C23 10, 25 11, 25 13 L25 18"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="20" y1="5" x2="20" y2="30"/><line x1="12" y1="12" x2="28" y2="12"/><path d="M15 30 L25 30 L20 35 Z"/></svg>`
+  },
+  hiper_racional: {
+    dark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="7" y="7" width="26" height="26"/><line x1="14" y1="7" x2="14" y2="33"/><line x1="7" y1="20" x2="33" y2="20"/></svg>`,
+    light: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M20 34 C15 29, 13 25, 13 21 C13 16, 16 12, 20 6 C24 12, 27 16, 27 21 C27 25, 25 29, 20 34 Z"/></svg>`
+  }
+};
+
+/* ── SCENARIO ILLUSTRATIONS ── */
+function illustration(id) {
+  const arts = {
+    0: `<svg viewBox="0 0 320 140" fill="none"><path d="M130 50 L130 35 L150 30 L170 30 L190 35 L190 50 Z" stroke="#B89543" stroke-width="1.2"/><g stroke="#4A1280" stroke-width="1"><line x1="135" y1="60" x2="135" y2="90"/><line x1="160" y1="60" x2="160" y2="110"/><line x1="185" y1="60" x2="185" y2="90"/></g></svg>`,
+    1: `<svg viewBox="0 0 320 140" fill="none"><circle cx="125" cy="65" r="28" stroke="#0044EE" stroke-width="1.2"/><line x1="145" y1="85" x2="170" y2="110" stroke="#0044EE" stroke-width="1.5"/><circle cx="125" cy="65" r="3" fill="#FFF"/></svg>`,
+    2: `<svg viewBox="0 0 320 140" fill="none"><rect x="80" y="25" width="40" height="30" stroke="#0044EE" stroke-width="1" opacity=".3"/><rect x="200" y="25" width="40" height="30" stroke="#0044EE" stroke-width="1" opacity=".3"/><circle cx="160" cy="70" r="3" fill="#FFF"/><path d="M130 55 L150 65 M190 55 L170 65" stroke="#4A1280" stroke-width="1"/></svg>`,
+    3: `<svg viewBox="0 0 320 140" fill="none"><path d="M100 70 Q160 30 220 70 Q160 110 100 70 Z" stroke="#0044EE" stroke-width="1.2"/><circle cx="160" cy="70" r="14" stroke="#0044EE" stroke-width="1"/><circle cx="160" cy="70" r="3" fill="#FFF"/></svg>`,
+    4: `<svg viewBox="0 0 320 140" fill="none"><path d="M20 70 L60 70 L70 35 L80 105 L90 50 L100 85 L110 70 L300 70" stroke="#0044EE" stroke-width="1.4" stroke-linejoin="round"/><circle cx="110" cy="70" r="3" fill="#4A1280"/></svg>`,
+    5: `<svg viewBox="0 0 320 140" fill="none"><path d="M135 105 L135 75 L120 75 M185 105 L185 75 L200 75" stroke="#0044EE" stroke-width="1.2"/><line x1="60" y1="55" x2="260" y2="55" stroke="#4A1280" stroke-width="1.5"/></svg>`,
+    6: `<svg viewBox="0 0 320 140" fill="none"><rect x="120" y="30" width="80" height="80" stroke="#0044EE" stroke-width="1.4"/><rect x="132" y="42" width="56" height="56" stroke="#0044EE" stroke-width="1" opacity=".5"/><circle cx="160" cy="70" r="2" fill="#FFF"/></svg>`,
+    7: `<svg viewBox="0 0 320 140" fill="none"><rect x="145" y="20" width="30" height="100" stroke="#0044EE" stroke-width="1.2"/><path d="M145 65 L155 68 L150 72 L165 75 L175 78" stroke="#4A1280" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+    8: `<svg viewBox="0 0 320 140" fill="none"><circle cx="160" cy="70" r="35" stroke="#4A1280" stroke-width="1" opacity=".3"/><circle cx="160" cy="70" r="22" stroke="#4A1280" stroke-width="1" opacity=".6"/><circle cx="160" cy="70" r="8" stroke="#4A1280" stroke-width="1.2"/><circle cx="160" cy="70" r="2" fill="#FFF"/></svg>`,
+    9: `<line x1="60" y1="45" x2="260" y2="45" stroke="#4A1280" stroke-width="1" opacity=".4"/><line x1="60" y1="95" x2="260" y2="95" stroke="#4A1280" stroke-width="1" opacity=".4"/><line x1="100" y1="110" x2="240" y2="30" stroke="#0044EE" stroke-width="2" stroke-linecap="round"/>`,
+    10: `<svg viewBox="0 0 320 140" fill="none"><rect x="110" y="25" width="100" height="90" stroke="#0044EE" stroke-width="1" opacity=".5"/><line x1="160" y1="25" x2="160" y2="115" stroke="#0044EE" stroke-width="1" opacity=".3"/><line x1="110" y1="70" x2="210" y2="70" stroke="#0044EE" stroke-width="1" opacity=".3"/><circle cx="160" cy="70" r="3" fill="#4A1280"/></svg>`,
+    11: `<svg viewBox="0 0 320 140" fill="none"><circle cx="160" cy="70" r="40" stroke="#0044EE" stroke-width="1" stroke-dasharray="4 4"/><line x1="160" y1="70" x2="190" y2="40" stroke="#4A1280" stroke-width="1.5" stroke-linecap="round"/><line x1="160" y1="70" x2="130" y2="95" stroke="#4A1280" stroke-width="1.5" stroke-linecap="round"/><circle cx="160" cy="70" r="2" fill="#FFF"/></svg>`
+  };
+  return arts[id] || arts[0];
+}
+
+/* ── QUESTIONS DATA ARRAY ── */
+const QS = [
+  { sit:'Acabas de cerrar un proyecto importante, tuviste un gran mes de facturación o alcanzaste un hito personal por el que trabajaste duro.', stmt:'En lugar de celebrar, siento un vacío inmediato, me cuesta disfrutar del logro y mi mente salta automáticamente a la siguiente meta por miedo a estancarme o relajarme demasiado.' },
+  { sit:'Ves a un conocido, colega o familiar celebrar con mucha alegría, orgullo y desparpajo un logro que tú consideras pequeño, mediocre o irrelevante.', stmt:'Me genera una molestia o crítica interna ver cómo la gente se conforma con tan poco y celebra cosas que, para mí, no tienen un estándar real de excelencia.' },
+  { sit:'Tienes la oportunidad perfecta para mostrar tu trabajo, hablar en público o liderar un proyecto donde serás el centro de atención absoluto.', stmt:'Busco una excusa para quedarme tras bambalinas, postergo el lanzamiento o me autosaboteo porque me aterra ser juzgado, quedar en ridículo o no saber cómo sostener la mirada de los demás.' },
+  { sit:'Estás navegando en redes sociales y ves a alguien mostrando con total seguridad sus éxitos, su cuerpo o hablando con una certeza inquebrantable.', stmt:'Siento un rechazo inmediato y pienso: "Qué persona tan ególatra, ridícula y necesitada de atención", juzgando con dureza su exceso de confianza.' },
+  { sit:'Un proyecto importante sale mal, una relación termina abruptamente o alguien en quien confiabas te critica duramente de frente.', stmt:'Mi reacción automática es desconectarme emocionalmente, actuar como si no me importara nada y pensar "al final todo da igual, yo ya sabía que esto pasaría", saboteando cualquier intento de arreglar las cosas.' },
+  { sit:'Ves a alguien exigiendo de forma abierta que lo traten bien, pidiendo amor sin filtros o publicando que "se merece lo mejor del mundo".', stmt:'Siento un fastidio silencioso y juzgo a esa persona como ilusa o patética por andar mendigando afecto o creyéndose especial, porque el mundo real no funciona así.' },
+  { sit:'Estás pasando por un momento de altísimo estrés emocional, una pérdida dolorosa o una crisis personal que te desborda.', stmt:'Me obligo a tragarme el dolor, me pongo la máscara de "yo puedo con todo" y me saturo de trabajo o responsabilidades, prohibiéndome por completo llorar o pedir ayuda a los demás.' },
+  { sit:'Alguien cercano a ti (tu pareja, un amigo o un empleado) se quiebra emocionalmente frente a ti por un problema, llorando y diciendo que ya no puede más.', stmt:'Siento una profunda incomodidad o una molestia interna, viéndolo inconscientemente como una debilidad, una exageración o una falta de carácter para resolver sus propios asuntos.' },
+  { sit:'Alguien te pide un favor que te quita tiempo valioso, o tu entorno propone un plan con el que estás en total desacuerdo.', stmt:'Digo que "sí" con una sonrisa para evitar que se molesten conmigo o causen un conflicto, anulando lo que yo realmente quería y acumulando un resentimiento silencioso.' },
+  { sit:'Eres testigo de cómo una persona dice un "NO" rotundo, frío y tajante, sin dar explicaciones ni pedir disculpas ante la petición de alguien más.', stmt:'Lo juzgo internamente como alguien egoísta, grosero o mala persona, porque me altera que no le importen los sentimientos de los demás para salirse con la suya.' },
+  { sit:'Te enfrentas a un estancamiento en tu vida o una crisis de pareja que te genera una profunda angustia o incertidumbre sobre el futuro.', stmt:'En lugar de sentir la emoción, me pongo a leer libros, buscar teorías, analizar los "porqués" psicológicos y explicar el problema de forma intelectual, quedándome atrapado en la teoría sin accionar en la práctica.' },
+  { sit:'Alguien te habla con entusiasmo de dejarse llevar por la intuición, saltar al vacío por pura fe o tomar una decisión importante basándose únicamente en lo que siente en el corazón.', stmt:'Siento un escepticismo inmediato y desprecio silenciosamente su postura, catalogando a esa persona como ingenua, irracional o inmadura.' }
+];
+
+/* ── ARCHETYPES FULL DATA ── */
+const ARC = {
+  insuficiente: {
+    num: '01 / 06', name: 'El <em>Insuficiente</em>', tag: 'La paradoja del buscador incansable', figX: 0.68,
+    foco_title: 'Un laberinto sin línea de meta',
+    foco: 'Te encuentras atrapado en un laberinto donde la línea de meta se mueve un kilómetro cada vez que estás a punto de tocarla. Tu día a día es una marcha forzada impulsada por el perfeccionismo. <strong>Falta de validación existencial pura.</strong> Viene de vidas e infancias donde el amor, la atención y el cariño no eran incondicionales, sino que se tenían que ganar compitiendo. Has aprendido a camuflar tu dolor detrás del éxito, los títulos, la productividad o la estética impecable, convenciéndote de que tu rigidez es simplemente "amor por la excelencia". Sin embargo, cuando la noche cae y el ruido cesa, el logro se evapora de tu pecho dejando un vacío inmediato. No puedes detenerte; tu psiquis ha decretado que el descanso es sinónimo de peligro, un espacio donde podrías quedar atrás.',
+    oscuridad: 'Este peso interno te obliga a mirar al mundo a través de un lente implacable, todo debe ser perfecto. Te descubres juzgando con severidad a los demás, todo te parece mediocre, todo se puede mejorar, siempre hay algo más que aprender, hay un paso más antes de terminar, tu psiquis determinó que <strong>la única forma de soportar la falta de validación es intentar que nada sea criticable</strong>. Te comparas constantemente, acumulas logros, títulos o metas, pero ninguno es suficiente para llenar el vacío que sientes que te persigue si te quedas sin hacer nada. Como mecanismo de defensa para no mirar tu propio dolor, tratas de insuficiente al resto; para ti, probablemente las personas o las situaciones nunca están a la altura de tus estándares. Pero la verdad es más profunda: <em>no te molesta su falta de estándares, te perturba su libertad.</em> Te altera ver que ellos se permiten existir y ser amados sin pagar el altísimo peaje de perfección que tú te exiges a diario.',
+    sombra_title: 'La Suficiencia — descansar en el "ya soy"',
+    sombra: 'Lo que rechazas ferozmente en los demás es lo que tu alma anhela con desesperación: <strong>La Suficiencia.</strong> El derecho sagrado a descansar en el "ya soy", a saber que tu existencia es válida aquí y ahora, sin necesidad de justificarla con un nuevo logro, sin un nuevo conocimiento, sin un nuevo trofeo. Toda tu vida has huido de la idea de que no eres suficiente, compitiendo por un amor y una validación que en tu vida estuvieron condicionados al rendimiento. <em>Tu perfeccionismo no es una virtud; es el escudo con el que intentas protegerte de la herida del juicio.</em>',
+    integracion: 'No puedes obligarte a sentirte suficiente hoy, porque tu mente no reconoce ese estado. El verdadero quiebre ocurre al aceptar la insuficiencia: <strong>"Sí, en este momento me siento insuficiente, tengo miedo y he construido un imperio de logros y creencias solo para mantenerlo y ocultarlo".</strong> Al dejar de huir de tu insuficiencia, la integras, y eso que estaba vacío se comienza a llenar precisamente desde ella.',
+    video: ''
+  },
+  inseguro: {
+    num: '02 / 06', name: 'El <em>Inseguro</em>', tag: 'La luz amordazada por el miedo', figX: 0.62,
+    foco_title: 'Un cuerpo lleno de potencial, paralizado',
+    foco: 'Carencia total o profunda en la sensación de seguridad base y falta de reconocimiento. Tu vida transcurre en la periferia de tus propios deseos. Experimentas la dolorosa sensación de habitar un cuerpo y una mente llenos de potencial, pero <strong>bloqueados por una fuerza invisible</strong>. Tu conducta en la oscuridad es la parálisis y la inacción. Ante cualquier oportunidad de brillar, liderar o mostrar tu verdadero valor, tu psiquis activa alarmas de emergencia que te obligan a encogerte, a postergar el lanzamiento o a quedarte tras bambalinas. No es una falta de valor —el inseguro se siente merecedor de amor—, sino una ausencia de suelo firme en tu historia. Te has contado la historia de que "eres tímido" o de que "aún no es el momento", usando la prudencia como una máscara para proteger tu falta de suelo firme.',
+    oscuridad: 'En tu interior te sientes tímido, te cuesta pensar y decirlo pero "miedoso" se cruza por tu cabeza, esto te paraliza, tu sombra habla con fuerza cuando observas a quienes caminan por el mundo con una certeza inquebrantable. Al ver a personas exponiendo sus ideas sin filtros, mostrando sus logros o sus cuerpos con total desparpajo en redes sociales, experimentas un rechazo automático. Tu mente se apresura a catalogarlos como <em>ególatras, ridículos, superficiales o farsantes necesitados de atención</em>. Tu psiquis descubrió que la forma más "segura" de protegerse es la inacción. Tienen un miedo paralizante a dar el paso, a mostrarse, a ser vistos o expuestos, porque el entorno es percibido como un lugar donde se van a desmoronar al primer cuestionamiento.',
+    sombra_title: 'La Seguridad — el derecho a ser visto',
+    sombra: 'Tu crítica destructiva no nace de la superioridad moral, nace de la falta de reconocimiento. Lo que rechazas en esas personas es exactamente lo que tú anhelas con cada fibra de tu ser: <strong>La Seguridad.</strong> Rechazas con fuerza a todo aquel que sí es seguro de sí mismo, que muestra su cuerpo, sus logros o su certeza. Lo juzgas o criticas porque esa persona te está proyectando en la cara el deseo reprimido que tú no te atreves a reclamar. <em>Tu inconsciente desea desesperadamente esa misma libertad para mostrarse, ser visto y reconocido.</em> Pero como tu historia carece de un suelo seguro y temes desmoronarte ante el primer juicio del entorno, tu mente prefiere destruir al audaz antes que admitir tu propio deseo de visibilidad.',
+    integracion: 'La seguridad no llegará borrando el miedo. El puente hacia tu poder comienza cuando dejas de pelear con tu timidez y aceptas con honestidad tu propia inseguridad actual. Al decir: <strong>"Estoy aterrado de que me vean y me duele ver a otros hacerlo"</strong>, tu inseguridad se convierte, paradójicamente, en tu primer centímetro de seguridad. Al aceptar tu inseguridad, paradójicamente, estás teniendo tu primer acto de genuina seguridad propia.',
+    video: ''
+  },
+  indigno: {
+    num: '03 / 06', name: 'El <em>Indigno</em>', tag: 'La fortaleza de la indiferencia', figX: 0.76,
+    foco_title: 'El búnker del "no me importa nada"',
+    foco: 'El Abandono o el Rechazo marcado y explícito. Esto viene de heridas severas donde fuiste abandonado físicamente o emocionalmente por tu entorno. El mundo exterior te devolvió un mensaje contundente: <strong>"No vales lo suficiente como para quedarme".</strong> Por esto tu mecanismo de supervivencia es el más frío y profundo de todos: <em>la desconexión emocional</em>. Has aprendido a operar bajo una coraza de apatía y autosabotaje defensivo donde el mantra silencioso es "no me importa nada, al final todo da igual". Cuando un proyecto fracasa o una relación se fractura, tu mente no se sorprende; se adelanta al dolor desactivando el sentir. Te muestras al mundo como alguien desapegado e independiente, pero detrás de esa distancia segura se esconde un vacío absoluto de merecimiento. Saboteas tus éxitos antes de que alcancen su punto máximo porque la expectativa de la pérdida te resulta insoportable.',
+    oscuridad: 'La desconexión total y la apatía. Un paso mucho más profundo que la insuficiencia (donde al menos había competencia); aquí no hubo nada. Tu psiquis, para sobrevivir, apaga el interruptor del merecimiento: <strong>"No me importa nada porque no valgo nada".</strong> Esta falta de valor interno te vuelve un crítico mordaz de los vínculos humanos legítimos. Cuando presencias a alguien exigiendo respeto de forma abierta, reclamando amor sin condiciones o expresando que "se merece lo mejor", sientes un fastidio visceral. Los juzgas internamente por andar mendigando afecto en un mundo que, según tu experiencia, es inherentemente hostil y propenso al descarte. A veces pueden mostrarse falsamente seguros, pero es una coraza fría nacida de la falta de conexión. Suelen sabotear sus relaciones o proyectos y justifican sus acciones demostrando que no buscan amor, usando frases como: <em>"Pero si yo no hice esto para que me quisieran"</em>, adelantándose al abandono antes de que ocurra.',
+    sombra_title: 'El Valor Propio y el Merecimiento',
+    sombra: 'Tu apathy es un búnker. Estás protegiendo la herida de un abandono o rechazo temprano que te grabó a fuego la mentira de que no valías lo suficiente como para que se quedaran contigo. Lo que rechazas en el otro es lo que tu alma grita en silencio por recibir: <strong>El anhelo de ser valioso y recibir un amor profundo.</strong> Rechazas cualquier muestra de valor, reconocimiento o afecto legítimo hacia ti o hacia otros, porque cada vez que ven a alguien valorarse o ser valorado, la coraza de la desconexión se agrieta y te expone al dolor del abandono original. <em>Anhelas ser valioso para alguien, anhelas recibir un amor profundo y seguro, pero tu psiquis prefiere mutilar tu capacidad de recibir antes que arriesgarse a revivir el dolor del abandono.</em>',
+    integracion: 'No intentes forzar un amor propio que hoy no sientes ni te hace sentido. Tu primer paso es aceptar la falta de valoración actual. No se trata de obligarte a "amarte a ti mismo" de la noche a la mañana, porque no sabes cómo se hace. El trabajo empieza por aceptar que hoy no te amas, aceptar el vacío de tu propia desvalorización para, desde ahí, aprender a construirla. <strong>Tu sanación comienza por aceptar la verdad de tu estado actual: "Hoy no me valoro, no sé cómo amarme y tengo pánico de ser rechazado".</strong> Al mirar ese vacío de frente, permites que tu valor se comience a construir desde tus cimientos.',
+    video: ''
+  },
+  invulnerable: {
+    num: '04 / 06', name: 'La <em>Invulnerable</em>', tag: 'El pilar exhausto que nadie sostiene', figX: 0.70,
+    foco_title: 'La armadura que ya no puedes quitarte',
+    foco: 'Falta de aceptación y cuidado de tu propia fragilidad. Creciste en un entorno donde mostrar debilidad, llorar o necesitar ayuda era peligroso, castigado, o interpretado como un defecto que te dejaba desprotegido ante el entorno. Por lo mismo tú eres <strong>el pilar</strong>. La persona a la que todos acuden cuando el mundo se cae a pedazos, el líder eficiente, el resolvedor de problemas que jamás se dobla. Has convertido la hiper-independencia en tu religión bajo el dogma de "yo puedo solo, yo no necesito a nadie", ojo esto no significa que no miren a los demás, significa que no acudirás a ellos para no ser una "molestia". Ante las crisis, tu respuesta automática en la oscuridad es tragarte el dolor, endurecer el cuerpo y llenarte de responsabilidades para bloquear cualquier fisura emocional. Utilizas tu eficiencia como un escudo de armas para asegurarte de que nadie te vea caer, controlarte o, peor aún, defraudarte. <em>Estás exhausto, pero tu mente te dice que bajar la guardia es una sentencia de muerte.</em>',
+    oscuridad: 'La hiper-independencia y la rigidez. Tu psiquis creó el dogma de <strong>"Yo tengo que poder solo/a, yo no molestaré a nadie".</strong> Esto te ha llevado a convertirte en un pilar que se responsabiliza por resolver, eres el responsable, una persona ultra eficiente que jamás pide un favor. Usas la autoeficiencia como un escondite. Esta rigidez te lleva a experimentar una profunda intolerancia hacia la fragilidad ajena. Cuando alguien cercano se quiebra emocionalmente en tu presencia, llora por frustración o demuestra una dependencia afectiva, eres el primero en acudir a ser un soporte, pero internamente te juras jamás mostrar o hacer eso, <em>tú no te quebrarás, nadie puede ver eso</em>, y consciente o inconscientemente, juzgas a quienes lo hacen, los ves como débiles, exagerados, manipuladores o faltas de carácter para hacerse cargo de sus vidas.',
+    sombra_title: 'La Vulnerabilidad — el derecho a rendirse',
+    sombra: 'La verdad es que no te molesta la debilidad del otro; lo que te choca es su permiso. Lo que rechazas en ellos es lo que tú tienes amordazado en el sótano: <strong>La Vulnerabilidad.</strong> Tu alma anhela con desesperación el derecho a rendirse, a bajar los brazos, a pedir ayuda y experimentar la paz de ser sostenido y cuidado por alguien más. <em>Pero como en tu infancia mostrar fragilidad fue peligroso o castigado, tu sombra prefiere castigar la debilidad afuera antes que admitir que mueres por un momento de descanso.</em>',
+    integracion: 'Aceptar el terror absoluto que te da no tener el control y admitir la profunda necesidad humana de apoyo que albergas. Tu fortaleza actual es solo el miedo disfrazado de control. La integración comienza cuando te permites el espacio seguro para aceptar el cansancio y el terror absoluto que te da soltar las riendas. Admitir: <strong>"No puedo solo, tengo que mostrar esto, tengo que mostrar que necesito ayuda".</strong> Esto no te destruirá; será el acto de valentía que te liberará de tu propia armadura.',
+    video: ''
+  },
+  complaciente: {
+    num: '05 / 06', name: 'El <em>Complaciente</em>', tag: 'La prisión de la falsa bondad', figX: 0.64,
+    foco_title: 'El "sí" automático que te encierra',
+    foco: 'El Amor Condicionado. Creciste en ambientes altamente inestables, volátiles o con dinámicas familiares donde el afecto y la paz dependían exclusivamente del humor de los adultos. El mensaje grabado fue: <strong>"Si eres dócil y complaciente te querré y estaré a salvo; si pones límites o expresas tu molestia, habrá caos o me iré".</strong> Eres el pacificador del entorno, la "buena persona" de la que nadie tiene una queja, el del "sí, señor". Tu conducta en la oscuridad es la anulación absoluta de tus propios deseos y límites a cambio de mantener una falsa armonía. Tienes un radar hiperactivo para detectar las necesidades de los demás y sacrificarte por cumplirlas antes de que te lo pidan, creyendo que tu valor radica en tu utilidad. Para sostener esta fachada de docilidad, <em>has creado una fosa común en tu inconsciente donde entierras tu rabia, tu ira y tus "noes"</em>, acumulando un resentimiento silencioso que erosiona tu salud mental desde adentro.',
+    oscuridad: 'Pasividad. Se convierten en las "buenas personas" absolutas, los del "sí, señor". Evitan el conflicto a toda costa, anulan sus deseos individuales para cumplir las expectativas de los demás y actúan como amortiguadores emocionales de su entorno. Para mantener esta fachada de paz, reprimen por completo su rabia, su ira y su frustración, acumulando un resentimiento silencioso pero tóxico. Tu sombra proyecta su frustración cuando te topas con personas firmes, tajantes y seguras de sus prioridades. Al ver a alguien decir un "NO" rotundo, frío y sin disculpas ante una exigencia externa, sientes una alteración interna. <strong>Tu mente los etiqueta inmediatamente como egoístas, narcisistas, groseras o malas personas</strong> que no miden el impacto de sus actos en los sentimientos de los demás.',
+    sombra_title: 'La Firmeza — decir "no" sin culpa',
+    sombra: 'Tu supuesta bondad no es generosidad; es una transacción nacida del miedo al descarte. Creciste bajo el yugo de un amor condicionado donde poner un límite significaba perder el afecto. Lo que rechazas en la persona tajante es tu mayor anhelo reprimido: <strong>La Firmeza.</strong> El poder de la auto-valía, el respeto propio y la capacidad de marcar límites duros y decir "no" sin culpa. <em>Tu espíritu desea recuperar el poder de autovalerse, de marcar límites duros y hacerse respetar.</em> Rechazas y juzgas severamente a las personas que son tajantes, que se priorizan a sí mismas o que expresan su enojo de forma directa, etiquetándolas como "egoístas", "groseras" o "malas", porque esas personas operan con la libertad y la firmeza que tú canjeaste a cambio de una falsa aceptación.',
+    integracion: 'La libertad no llegará intentando ser fuerte de golpe. El quiebre con tu sombra requiere la honestidad incómoda de aceptar la raíz: <strong>"Mi complacencia es una estrategia de control para que no me dejen, y estoy lleno de rabia reprimida".</strong> Debes aceptar tu propia rabia interna y tu individualismo oculto. Debes reconocer e incomodarte aceptando que tu supuesta bondad y complacencia no nacen de la generosidad pura, sino del miedo visceral al rechazo y al abandono. Solo al aceptar tu ira oculta podrás comenzar a transformarla en límites sanos.',
+    video: ''
+  },
+  hiper_racional: {
+    num: '06 / 06', name: 'El <em>Hiper-Racional</em>', tag: 'El búnker de la mente brillante', figX: 0.67,
+    foco_title: 'La mente como escudo de alta tecnología',
+    foco: 'Ausencia de certeza, predictibilidad y estructura segura en la vida. Crecieron en hogares caóticos, con dinámicas impredecibles, secretos familiares o promesas constantemente rotas, donde el suelo emocional cambiaba sin previo aviso. <strong>Utilizas tu intelecto como un escudo de alta tecnología.</strong> Ante cualquier crisis, estancamiento vital o dolor emocional, tu respuesta en la oscuridad es la intelectualización absoluta. Te refugias en los libros, las teorías psicológicas, el análisis de datos y la búsqueda exhaustiva de los "porqués" lógicos para explicar tu sufrimiento. Te has convertido en un experto teórico del crecimiento personal, pero tu vida práctica —tus relaciones reales, tus finanzas, el cuidado de tu cuerpo— permanece congelada. <em>Prefieres la seguridad conceptual de tener la razón dentro de tu cabeza antes que bajar a la arena de la acción real</em>, donde las variables no se pueden conocer o controlar y puedes fallar.',
+    oscuridad: 'El sobre-análisis, el cinismo y la intelectualización absoluta de la vida. Tu psiquis aprendió que la única forma de estar a salvo del caos exterior era entenderlo todo de forma lógica. Usas la mente como un búnker: lees, acumulas teorías de crecimiento personal, analizas los traumas de los demás y buscas explicaciones científicas para cada emoción. Este blindaje mental te vuelve sumamente escéptico y despectivo frente a la emotividad o la fe del resto. Cuando escuchas a alguien hablar de dejarse llevar por la intuición, tomar decisiones basadas puramente en el corazón o saltar al vacío por simple confianza en el proceso de la vida, sientes un juicio y desprecio silencioso. <strong>Los catalogas como seres ingenuos, irracionales, inmaduros o faltas de rigor mental.</strong> Porque lo sensato es quedarse en el mundo seguro de las ideas donde siempre tienes el control conceptual, pero tu vida práctica (relaciones reales, cuerpo, dar saltos de fe) está congelada por la parálisis por análisis.',
+    sombra_title: 'La Entrega — confiar sin entender',
+    sombra: 'Tu cinismo no es inteligencia; es pánico al descontrol. Creciste en un entorno caótico o impredecible donde aprendiste que la única forma de estar a salvo era anticiparte a todo a través de la lógica. Lo que rechazas en el intuitivo es lo que tu búnker mental te prohíbe experimentar: <strong>La Entrega (Confianza).</strong> La capacidad de soltar el control mental, conectar con la intuición, vivir la emoción pura sin etiquetarla y saltar al vacío confiando en el proceso de la vida. Rechazas con fuerza la espontaneidad, la fe, lo místico o a las personas que actúan por mero impulso emocional, juzgándolas como "ingenuas", "tontas" o "irracionales", porque te aterra recordar el pánico que te produce no saber qué va a pasar mañana. <em>Pero la verdad es que tu ser anhela la capacidad de soltar el sobre-análisis, conectar con la emoción pura y vivir sin necesidad de una explicación científica para cada latido.</em>',
+    integracion: 'Aceptar tu profunda impotencia y el miedo terrorífico que te produce la posibilidad de equivocarse o no saber qué hacer en el plano real. Todo tu conocimiento acumulado es solo la estrategia de tu sombra para no sentir la frustración de estar estancado. Al admitir: <strong>"Sé toda la teoría, pero estoy aterrado de actuar y no tener el control"</strong>, comienzas la integración. Debes aceptar que todo tu arsenal de conocimiento es solo una estrategia de tu sombra para no sentir la frustración de estar estancado.',
+    video: ''
+  }
+};
+
+/* ── STATE CORE ── */
+let questionOrder = [];
+let currentIdx = 0;
+const answers = new Array(12).fill(5);
+
+/* ── INTERFACE LIFE CYCLE ── */
+function goTo(fromId, toId) {
+  const f = document.getElementById(fromId);
+  const t = document.getElementById(toId);
+  f.classList.add('out');
+  setTimeout(() => {
+    f.classList.remove('active', 'out');
+    t.classList.add('active');
+  }, 450);
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* RPG TRANSITION: LANDING -> LOADING -> QUIZ */
+function startQuiz() {
+  questionOrder = shuffle([0,1,2,3,4,5,6,7,8,9,10,11]);
+  currentIdx = 0;
+  answers.fill(5);
+  
+  // Set Loading text for entry breach
+  document.getElementById('loader-title').innerHTML = "Inicializando Brecha<br>Sincrónica";
+  document.getElementById('loader-sub').innerHTML = "Abriendo canal seguro encriptado... Desarmando las defensas analíticas de la mente consciente.";
+  buildCodeRain();
+  
+  goTo('s-warn', 's-loading');
+  document.getElementById('l-bar').classList.add('active');
+  
+  setTimeout(() => {
+    document.getElementById('l-bar').classList.remove('active');
+    goTo('s-loading', 's-quiz');
+    renderQ();
+  }, 3200);
+}
+
+function exitQuiz() { window.location.reload(); }
+
+/* RPG STEP ENGINE */
+function renderQ() {
+  const origIdx = questionOrder[currentIdx];
+  const q = QS[origIdx];
+  const stepNum = String(currentIdx + 1).padStart(2, '0');
+
+  document.getElementById('step-num').textContent = stepNum;
+  document.getElementById('q-illustration').innerHTML = illustration(origIdx);
+  document.getElementById('q-scenario-body').textContent = q.sit;
+  document.getElementById('q-statement').textContent = q.stmt;
+
+  const slider = document.getElementById('q-slider');
+  slider.value = answers[origIdx];
+  applySlider(answers[origIdx], false);
+  updateProgress();
+}
+
+function applySlider(val, save = true) {
+  val = parseInt(val);
+  const origIdx = questionOrder[currentIdx];
+  if (save) answers[origIdx] = val;
+
+  document.getElementById('slider-num').textContent = val;
+  const pct = ((val - 1) / 9) * 100;
+  document.getElementById('q-slider').style.background =
+    `linear-gradient(to right, var(--supernova) 0%, var(--quantum) ${pct}%, rgba(74,18,128,0.15) ${pct}%, rgba(74,18,128,0.15) 100%)`;
+
+  const colors = ['#3A3A4C','#4A4A5A','#5A4A7A','#6A4A9A','#7A4ABA','#8A4AD0','#3B82F6','#2563EB','#4A1280','#6C22B4'];
+  document.getElementById('slider-num').style.color = colors[val - 1];
+
+  if (save) {
+    const abyss = document.getElementById('cont-abyss');
+    const faro  = document.getElementById('cont-faro');
+    abyss.classList.remove('pulse-abyss');
+    faro.classList.remove('pulse-faro');
+    void abyss.offsetWidth; void faro.offsetWidth;
+    if (val >= 7) abyss.classList.add('pulse-abyss');
+    else if (val <= 3) faro.classList.add('pulse-faro');
+    updateContPosition();
+  }
+}
+
+function onSlider(val) { applySlider(val, true); }
+
+function updateProgress() {
+  const stepFraction = (currentIdx + 1) / 12;
+  const fill = document.getElementById('ego-fill');
+  const status = document.getElementById('ego-status');
+  const answered = questionOrder.slice(0, currentIdx + 1).map(i => answers[i]);
+  const avg = answered.reduce((a,b)=>a+b,0) / answered.length;
+  const pct = Math.round(stepFraction * 50 + ((avg - 1) / 9) * 50);
+  fill.style.width = pct + '%';
+  
+  if (pct >= 80) status.textContent = '[Crítica]';
+  else if (pct >= 60) status.textContent = '[Alta]';
+  else if (pct >= 40) status.textContent = '[Moderada]';
+  else status.textContent = '[Mínima]';
+}
+
+function updateContPosition() {
+  const answered = questionOrder.slice(0, currentIdx + 1).map(i => answers[i]);
+  const avg = answered.reduce((a,b)=>a+b,0) / answered.length;
+  const pct = ((avg - 1) / 9) * 100;
+  document.documentElement.style.setProperty('--cont-pos', pct + '%');
+}
+
+/* Inyectar la posición dinámica del nodo del Continuo en el pseudo-elemento */
+(function injectCSS(){
+  const style = document.createElement('style');
+  style.textContent = `.cont-line::after { content:''; position:absolute; top:50%; left: var(--cont-pos, 50%) !important; width:8px; height:8px; border-radius:50%; background:#fff; box-shadow:0 0 10px #fff; transform:translate(-50%, -50%); transition:left 0.4s cubic-bezier(.4,0,.2,1); }`;
+  document.head.appendChild(style);
+})();
+
+function nextQ() {
+  answers[questionOrder[currentIdx]] = parseInt(document.getElementById('q-slider').value);
+  if (currentIdx < 11) fadeSwap(currentIdx + 1);
+  else processResult();
+}
+function prevQ() { if (currentIdx > 0) fadeSwap(currentIdx - 1); }
+
+function fadeSwap(toIdx) {
+  const stage = document.getElementById('q-stage');
+  stage.classList.add('fading');
+  setTimeout(() => {
+    currentIdx = toIdx;
+    renderQ();
+    stage.classList.remove('fading');
+  }, 240);
+}
+
+/* ── INJECT RPG NAVIGATION IN STAGE AREA ── */
+window.addEventListener('DOMContentLoaded', () => {
+  const stage = document.getElementById('q-stage');
+  if (!stage) return;
+  const nav = document.createElement('div');
+  nav.className = 'q-nav-buttons';
+  nav.innerHTML = `
+    <button id="btn-back" onclick="prevQ()" class="btn-nav-back">← anterior</button>
+    <button id="btn-next" onclick="nextQ()" class="btn-primary" style="padding:12px 28px; font-size:10px;">Siguiente →</button>
+  `;
+  stage.appendChild(nav);
+});
+
+const _renderQ = renderQ;
+renderQ = function() {
+  _renderQ();
+  const back = document.getElementById('btn-back');
+  const next = document.getElementById('btn-next');
+  if (back) back.style.visibility = currentIdx === 0 ? 'hidden' : 'visible';
+  if (next) next.innerHTML = currentIdx === 11 ? '<span>Descifrar Núcleo →</span>' : '<span>Siguiente →</span>';
+};
+
+/* RPG EXIT TRANSITION: PROCESSING VERDICT */
+function processResult() {
+  document.getElementById('loader-title').innerHTML = "Descifrando<br>Núcleo Psíquico";
+  document.getElementById('loader-sub').innerHTML = "Tu mente va a intentar intelectualizar lo que vas a leer a continuación para protegerte del dolor de tu carencia. <span class='em'>No se lo permitas.</span><br><br>Tu tesoro y diagnóstico han sido revelados.";
+  buildCodeRain();
+  goTo('s-quiz', 's-loading');
+  document.getElementById('l-bar').classList.add('active');
+  setTimeout(() => {
+    document.getElementById('l-bar').classList.remove('active');
+    showResult();
+  }, 3500);
+}
+
+function buildCodeRain() {
+  const rain = document.getElementById('code-rain');
+  rain.innerHTML = '';
+  const colCount = Math.floor(window.innerWidth / 60);
+  const chars = '01∑π∂∫θλ√≈∞';
+  for (let i = 0; i < colCount; i++) {
+    const col = document.createElement('div');
+    col.className = 'rain-col';
+    col.style.left = (i * 60 + Math.random() * 20) + 'px';
+    col.style.animationDuration = (4 + Math.random() * 4) + 's';
+    col.style.animationDelay = (Math.random() * 1.5) + 's';
+    let str = '';
+    for (let j = 0; j < 25; j++) str += chars[Math.floor(Math.random() * chars.length)] + '\n';
+    col.textContent = str;
+    rain.appendChild(col);
+  }
+}
+
+/* ── EVALUATION ENGINE (SCORING & TIE-BREAKER) ── */
+function calcArchetype() {
+  const a = answers;
+  const scores = {
+    insuficiente:   a[0] + a[1],
+    inseguro:       a[2] + a[3],
+    indigno:        a[4] + a[5],
+    invulnerable:   a[6] + a[7],
+    complaciente:   a[8] + a[9],
+    hiper_racional: a[10]+ a[11]
+  };
+  const max = Math.max(...Object.values(scores));
+  const tied = Object.keys(scores).filter(k => scores[k] === max);
+  if (tied.length === 1) return tied[0];
+  
+  const osc = { insuficiente:0, inseguro:2, indigno:4, invulnerable:6, complaciente:8, hiper_racional:10 };
+  let winner = tied[0], topOsc = a[osc[tied[0]]];
+  for (let i = 1; i < tied.length; i++) {
+    const k = tied[i];
+    if (a[osc[k]] > topOsc) { winner = k; topOsc = a[osc[k]]; }
+  }
+  return winner;
+}
+
+/* COSMIC NAIPE VECTOR MAP */
+function makeResultSVG(figFrac) {
+  const W = 700, H = 220, lampX = 60, groundY = 175, fx = W * figFrac;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#070612"/><stop offset="100%" stop-color="#020205"/></linearGradient>
+    <radialGradient id="lamp" cx="9%" cy="40%" r="40%"><stop offset="0%" stop-color="rgba(0,68,238,0.22)"/><stop offset="100%" stop-color="rgba(0,0,0,0)"/></radialGradient>
+    <radialGradient id="nova" cx="75%" cy="40%" r="50%"><stop offset="0%" stop-color="rgba(74,18,128,0.12)"/><stop offset="100%" stop-color="rgba(0,0,0,0)"/></radialGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/><rect width="${W}" height="${H}" fill="url(#nova)"/><rect width="${W}" height="${H}" fill="url(#lamp)"/>
+  <rect y="${groundY}" width="${W}" height="${H-groundY}" fill="#010103"/><line x1="0" y1="${groundY}" x2="${W}" y2="${groundY}" stroke="rgba(0,68,238,0.08)"/>
+  <polygon points="${lampX},110 ${lampX+5},110 ${lampX+120},${groundY} ${lampX-80},${groundY}" fill="rgba(0,68,238,0.015)"/>
+  <rect x="${lampX-1}" y="112" width="2" height="${groundY-112}" fill="#16122C"/>
+  <ellipse cx="${lampX-5}" cy="108" rx="8" ry="4" fill="rgba(0,68,238,0.2)"/>
+  <g transform="translate(${fx}, ${groundY-52})">
+    <ellipse cx="0" cy="-5" rx="7" ry="8" fill="#020205"/>
+    <path d="M-8,4 L-6,-35 L6,-35 L8,4 Z" fill="#020205" stroke="rgba(0,68,238,0.1)" stroke-width="0.5"/>
+    <rect x="-6" y="4" width="5" height="16" fill="#020205"/>
+    <rect x="1" y="4" width="5" height="16" fill="#020205"/>
+  </g>
+  <ellipse cx="${fx}" cy="${groundY+1}" rx="12" ry="3" fill="rgba(0,0,0,0.5)"/>
+  <circle cx="450" cy="45" r="0.8" fill="#FFF" opacity=".3"/><circle cx="580" cy="30" r="1" fill="#FFF" opacity=".2"/>
+  </svg>`;
+}
+
+/* ── RENDER RESULTS SUMMARY ── */
+function showResult() {
+  const key = calcArchetype();
+  const arc = ARC[key];
+
+  document.getElementById('r-arc-num').textContent = arc.num;
+  document.getElementById('r-name').innerHTML = arc.name;
+  document.getElementById('r-tag').textContent = arc.tag;
+  document.getElementById('r-foco-title').textContent = arc.foco_title;
+  document.getElementById('r-foco').innerHTML = arc.foco;
+  document.getElementById('r-oscuridad').innerHTML = arc.oscuridad;
+  document.getElementById('r-sombra-title').textContent = arc.sombra_title;
+  document.getElementById('r-sombra').innerHTML = arc.sombra;
+  document.getElementById('r-integracion').innerHTML = arc.integracion;
+
+  document.getElementById('naipe-dark').innerHTML = NAIPE[key].dark;
+  document.getElementById('naipe-light').innerHTML = NAIPE[key].light;
+
+  const sc = document.getElementById('r-scene');
+  sc.innerHTML = makeResultSVG(arc.figX) + '<div class="r-scene-corner tl"></div><div class="r-scene-corner br"></div><div class="r-scene-caption">EL CONTINUO — MAPA DE IDENTIDAD</div>';
+
+  const vid = document.getElementById('r-video');
+  const ph = document.getElementById('r-vid-ph');
+  if (arc.video) { vid.src = arc.video; ph.style.display = 'none'; }
+  else { vid.src = ''; ph.style.display = 'flex'; }
+
+  goTo('s-loading', 's-result');
+
+  // Smooth blur revealing transitions
+  const elements = ['r-eyebrow', 'r-hero', 'r-scene', 'r-sections', 'r-vid-wrap', 'r-cta', 'r-restart'];
+  elements.forEach((id, idx) => {
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.transition = 'opacity 0.8s ease, transform 0.8s ease, filter 0.8s ease';
+      el.style.transform = 'translateY(8px)';
+      el.style.filter = 'blur(4px)';
+      el.style.opacity = '0';
+      requestAnimationFrame(() => {
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+        el.style.filter = 'blur(0)';
+      });
+    }, 400 + (idx * 250));
+  });
+}
+
+function restart() {
+  window.location.reload();
+}
+
+</script>
+</body>
+</html>
